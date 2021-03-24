@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang>
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="kafka源码,producer,client,">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="kafka2.4.1 源码阅读Produce API (二) 不同压缩类型的处理上一篇文章，我们介绍了kafka 高版本client 与低版本client 在produce 端访问 kafka 2.4.1 过程，kafka服务器是怎么应付不同message format version的。 这一篇文章我们把重点放在，客户端与服务端的压缩版本上，我们思考这样一个问题： 当kafka producer">
+<meta name="keywords" content="kafka源码,producer,client">
+<meta property="og:type" content="article">
+<meta property="og:title" content="kafka2.4.1源码阅读之不同压缩类型处理">
+<meta property="og:url" content="https://kingnf.github.io/2021/03/24/kafka2-4-1源码阅读之不同压缩类型处理/index.html">
+<meta property="og:site_name" content="无不利, 挥谦">
+<meta property="og:description" content="kafka2.4.1 源码阅读Produce API (二) 不同压缩类型的处理上一篇文章，我们介绍了kafka 高版本client 与低版本client 在produce 端访问 kafka 2.4.1 过程，kafka服务器是怎么应付不同message format version的。 这一篇文章我们把重点放在，客户端与服务端的压缩版本上，我们思考这样一个问题： 当kafka producer">
+<meta property="og:locale" content="default">
+<meta property="og:updated_time" content="2021-03-24T14:28:15.023Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="kafka2.4.1源码阅读之不同压缩类型处理">
+<meta name="twitter:description" content="kafka2.4.1 源码阅读Produce API (二) 不同压缩类型的处理上一篇文章，我们介绍了kafka 高版本client 与低版本client 在produce 端访问 kafka 2.4.1 过程，kafka服务器是怎么应付不同message format version的。 这一篇文章我们把重点放在，客户端与服务端的压缩版本上，我们思考这样一个问题： 当kafka producer">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"hide","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Author'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://kingnf.github.io/2021/03/24/kafka2-4-1源码阅读之不同压缩类型处理/">
+
+
+
+
+
+  <title>kafka2.4.1源码阅读之不同压缩类型处理 | 无不利, 挥谦</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="default">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">无不利, 挥谦</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <h1 class="site-subtitle" itemprop="description"></h1>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            Home
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            Categories
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            Archives
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://kingnf.github.io/2021/03/24/kafka2-4-1源码阅读之不同压缩类型处理/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="fcyang">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="无不利, 挥谦">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h2 class="post-title" itemprop="name headline">kafka2.4.1源码阅读之不同压缩类型处理</h2>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">Posted on</span>
+              
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2021-03-24T22:27:08+08:00">
+                2021-03-24
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Kafka/" itemprop="url" rel="index">
+                    <span itemprop="name">Kafka</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+              <span class="post-comments-count">
+                <span class="post-meta-divider">|</span>
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-comment-o"></i>
+                </span>
+                <a href="/2021/03/24/kafka2-4-1源码阅读之不同压缩类型处理/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count valine-comment-count" data-xid="/2021/03/24/kafka2-4-1源码阅读之不同压缩类型处理/" itemprop="commentCount"></span>
+                </a>
+              </span>
+            
+          
+
+          
+          
+             <span id="/2021/03/24/kafka2-4-1源码阅读之不同压缩类型处理/" class="leancloud_visitors" data-flag-title="kafka2.4.1源码阅读之不同压缩类型处理">
+               <span class="post-meta-divider">|</span>
+               <span class="post-meta-item-icon">
+                 <i class="fa fa-eye"></i>
+               </span>
+               
+                 <span class="post-meta-item-text">Visitors&#58;</span>
+               
+                 <span class="leancloud-visitors-count"></span>
+             </span>
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h1 id="kafka2-4-1-源码阅读"><a href="#kafka2-4-1-源码阅读" class="headerlink" title="kafka2.4.1 源码阅读"></a>kafka2.4.1 源码阅读</h1><h2 id="Produce-API-二-不同压缩类型的处理"><a href="#Produce-API-二-不同压缩类型的处理" class="headerlink" title="Produce API (二) 不同压缩类型的处理"></a>Produce API (二) 不同压缩类型的处理</h2><p>上一篇文章，我们介绍了kafka 高版本client 与低版本client 在produce 端访问 kafka 2.4.1 过程，kafka服务器是怎么应付不同message format version的。</p>
+<p>这一篇文章我们把重点放在，客户端与服务端的压缩版本上，我们思考这样一个问题：</p>
+<p>当kafka producer 在访问 kafka 服务器的时候，分别在客户端和服务器端使用不同的压缩版本的话，broker会怎么处理呢？</p>
+<p>那让我们带着这个问题，在来看一下Kafka2.4.1的源码：最好是先看一下上一篇博客，有一些概念会更好的理解。</p>
+<h2 id="源码解析"><a href="#源码解析" class="headerlink" title="源码解析"></a>源码解析</h2><p>上一篇博客，我们已经了解了，kafka broker是如何将一个普通的Request 二进制流，转化为特定ProduceRequest，并将Request中Topic-data部分转化为MemoryRecords的过程，并且在MemoryRecords中利用batchIterator 进行迭代，将ByteBuffer数据转化成了对应的Batch数据。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">final</span> Iterable&lt;MutableRecordBatch&gt; batches = <span class="keyword">this</span>::batchIterator;</span><br></pre></td></tr></table></figure>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> MutableRecordBatch <span class="title">nextBatch</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        <span class="comment">//获取buffer中还没有解析为batch 的长度</span></span><br><span class="line">        <span class="keyword">int</span> remaining = buffer.remaining();</span><br><span class="line">        <span class="comment">//获取下一个batch的长度</span></span><br><span class="line">        Integer batchSize = nextBatchSize();</span><br><span class="line">        <span class="keyword">if</span> (batchSize == <span class="keyword">null</span> || remaining &lt; batchSize)</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">null</span>;</span><br><span class="line">        <span class="comment">//MAGIC_OFFEST=16 ,我们可以发现不管message format 是哪个版本，它的magic字段都在16个字节的便宜位置，所以这对message 二进制流的解析，很有帮助。</span></span><br><span class="line">        <span class="keyword">byte</span> magic = buffer.get(buffer.position() + MAGIC_OFFSET);</span><br><span class="line">        <span class="comment">//从当前position阶段，创建新的ByteBuffer</span></span><br><span class="line">        ByteBuffer batchSlice = buffer.slice();</span><br><span class="line">        <span class="comment">//设置batchSlice的最大size</span></span><br><span class="line">        batchSlice.limit(batchSize);</span><br><span class="line">        <span class="comment">//修改position 到batchsize</span></span><br><span class="line">        buffer.position(buffer.position() + batchSize);</span><br><span class="line">        <span class="comment">//如果message_format version &gt;1的话，解析为V2版本的消息格式</span></span><br><span class="line">        <span class="keyword">if</span> (magic &gt; RecordBatch.MAGIC_VALUE_V1)</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">new</span> DefaultRecordBatch(batchSlice);</span><br><span class="line">        <span class="keyword">else</span></span><br><span class="line">            <span class="comment">//否则的话，解析为V0/1 的消息格式</span></span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">new</span> AbstractLegacyRecordBatch.ByteBufferLegacyRecordBatch(batchSlice);</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+<p>我们知道，Kafka的压缩一般，压缩的是Batch的内容，对于Batch的header 字段信息，都是不进行压缩的，所以看到上面代码位置的时候，是还未出现代码解压过程的。因此这里我们继续Track 代码 ，Track进Batch，看看在Batch 内部，kafka是如何进行解析的。</p>
+<p>因为kafka2.4.1 默认的magic版本是v2，所以我们先Trank 到DefaultRecordBatch中看看v2版本是如何处理的。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> Iterator&lt;Record&gt; <span class="title">iterator</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        <span class="comment">//Batch中的属性是records count 值是否等于0</span></span><br><span class="line">        <span class="keyword">if</span> (count() == <span class="number">0</span>)</span><br><span class="line">            <span class="keyword">return</span> Collections.emptyIterator();</span><br><span class="line">        <span class="comment">//从Batche header 中判断是否使用了压缩，未压缩，返回未压缩迭代器</span></span><br><span class="line">        <span class="keyword">if</span> (!isCompressed())</span><br><span class="line">            <span class="keyword">return</span> uncompressedIterator();</span><br><span class="line"></span><br><span class="line">        <span class="comment">// for a normal iterator, we cannot ensure that the underlying compression stream is closed,</span></span><br><span class="line">        <span class="comment">// so we decompress the full record set here. Use cases which call for a lower memory footprint</span></span><br><span class="line">        <span class="comment">// can use `streamingIterator` at the cost of additional complexity</span></span><br><span class="line">        <span class="comment">//压缩的话，先利用压缩的迭代器,解压缩，读出Record 存入ArrayList后，返回ArrayList的迭代器。</span></span><br><span class="line">        <span class="keyword">try</span> (CloseableIterator&lt;Record&gt; iterator = compressedIterator(BufferSupplier.NO_CACHING, <span class="keyword">false</span>)) &#123;</span><br><span class="line">            List&lt;Record&gt; records = <span class="keyword">new</span> ArrayList&lt;&gt;(count());</span><br><span class="line">            <span class="keyword">while</span> (iterator.hasNext())</span><br><span class="line">                records.add(iterator.next());</span><br><span class="line">            <span class="keyword">return</span> records.iterator();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+<p>这里就是根据BatchHeader 来判断是否使用了压缩，然后来返回对应的迭代器，对于使用了压缩的batch，是先利用解压缩迭代器，将数据解析到ArrayList中，然后返回给broker arraylist的迭代器，之后我们跟进compressedIterator ，然后可以发现：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">private</span> CloseableIterator&lt;Record&gt; <span class="title">compressedIterator</span><span class="params">(BufferSupplier bufferSupplier, <span class="keyword">boolean</span> skipKeyValue)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">final</span> ByteBuffer buffer = <span class="keyword">this</span>.buffer.duplicate();</span><br><span class="line">        buffer.position(RECORDS_OFFSET);</span><br><span class="line">        <span class="comment">//解压缩数据到inputStream</span></span><br><span class="line">        <span class="keyword">final</span> DataInputStream inputStream = <span class="keyword">new</span> DataInputStream(compressionType().wrapForInput(buffer, magic(),</span><br><span class="line">            bufferSupplier));</span><br><span class="line">        <span class="comment">// 这里skipKeyValue 是某些字段，可以不用解析出具体到值，可以跳过。</span></span><br><span class="line">        <span class="keyword">if</span> (skipKeyValue) &#123;</span><br><span class="line">            <span class="comment">// this buffer is used to skip length delimited fields like key, value, headers</span></span><br><span class="line">            <span class="keyword">byte</span>[] skipArray = <span class="keyword">new</span> <span class="keyword">byte</span>[MAX_SKIP_BUFFER_SIZE];</span><br><span class="line">            <span class="comment">//调用StreamRecord 迭代器，从inputStream流中，读出数据。</span></span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">new</span> StreamRecordIterator(inputStream) &#123;</span><br><span class="line">                <span class="meta">@Override</span></span><br><span class="line">                <span class="comment">//因为有skip值，所以这里读出的是部分字段有解析的Record值对象。</span></span><br><span class="line">                <span class="function"><span class="keyword">protected</span> Record <span class="title">doReadRecord</span><span class="params">(<span class="keyword">long</span> baseOffset, <span class="keyword">long</span> firstTimestamp, <span class="keyword">int</span> baseSequence, Long logAppendTime)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">                    <span class="keyword">return</span> DefaultRecord.readPartiallyFrom(inputStream, skipArray, baseOffset, firstTimestamp, baseSequence, logAppendTime);</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;;</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">new</span> StreamRecordIterator(inputStream) &#123;</span><br><span class="line">                <span class="meta">@Override</span></span><br><span class="line">                <span class="function"><span class="keyword">protected</span> Record <span class="title">doReadRecord</span><span class="params">(<span class="keyword">long</span> baseOffset, <span class="keyword">long</span> firstTimestamp, <span class="keyword">int</span> baseSequence, Long logAppendTime)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">                    <span class="keyword">return</span> DefaultRecord.readFrom(inputStream, baseOffset, firstTimestamp, baseSequence, logAppendTime);</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+<p>这里我们可以发现了，这里对数据进行解压缩，是没有管具体压缩类型的，它会将所有从producer中发出的batch都会进行解压缩（未压缩除外），而无关其压缩类型是否与broker服务器设置的压缩类型一致。</p>
+<p>但是这里我们可能会产生一个疑问，如果这样的话，producer的压缩类型无关broker的压缩类型，反正最后都要在broker服务器解压的，所以，是不是producer的压缩类型可以随便设置，没有必要非得和broker的压缩类型一致。</p>
+<p>其实不然，让我们继续往后看，当broker 对producer 的Batch 进行解压缩，分配offset，填充一些Batch中的partition leader epoch，校验Record中的字段的值比如offset delta 是否递增，并统计最大timestamp以及对应的offset等信息，并填充到Batch header中，后，在写入到LogSegment中，是怎么进行处理的呢：</p>
+<p>我们根据上一篇博客，可知当Broker将Request中多个Batch以后，会对Batch中的Records进行一些检查和分配Offset，具体由以下方法实现的：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * Update the offsets for this message set and do further validation on messages including:</span></span><br><span class="line"><span class="comment"> * 1. Messages for compacted topics must have keys</span></span><br><span class="line"><span class="comment"> * 2. When magic value &gt;= 1, inner messages of a compressed message set must have monotonically increasing offsets</span></span><br><span class="line"><span class="comment"> *    starting from 0.</span></span><br><span class="line"><span class="comment"> * 3. When magic value &gt;= 1, validate and maybe overwrite timestamps of messages.</span></span><br><span class="line"><span class="comment"> * 4. Declared count of records in DefaultRecordBatch must match number of valid records contained therein.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * This method will convert messages as necessary to the topic's configured message format version. If no format</span></span><br><span class="line"><span class="comment"> * conversion or value overwriting is required for messages, this method will perform in-place operations to</span></span><br><span class="line"><span class="comment"> * avoid expensive re-compression.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Returns a ValidationAndOffsetAssignResult containing the validated message set, maximum timestamp, the offset</span></span><br><span class="line"><span class="comment"> * of the shallow message with the max timestamp and a boolean indicating whether the message sizes may have changed.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">private</span>[log] <span class="function">def <span class="title">validateMessagesAndAssignOffsets</span><span class="params">(records: MemoryRecords,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  topicPartition: TopicPartition,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  offsetCounter: LongRef,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  time: Time,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  now: Long,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  sourceCodec: CompressionCodec,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  targetCodec: CompressionCodec,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  compactedTopic: Boolean,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  magic: Byte,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  timestampType: TimestampType,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  timestampDiffMaxMs: Long,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  partitionLeaderEpoch: Int,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  origin: AppendOrigin,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  interBrokerProtocolVersion: ApiVersion,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                  brokerTopicStats: BrokerTopicStats)</span>: ValidationAndOffsetAssignResult </span>= &#123;</span><br><span class="line">  <span class="comment">//当producer 设置的压缩类型和 broker服务器配置的压缩类型都是未压缩时</span></span><br><span class="line">  <span class="keyword">if</span> (sourceCodec == NoCompressionCodec &amp;&amp; targetCodec == NoCompressionCodec) &#123;</span><br><span class="line">    <span class="comment">// check the magic value</span></span><br><span class="line">    <span class="comment">//检查records中的magic 值，是否和服务器配置的magic值相等。</span></span><br><span class="line">    <span class="keyword">if</span> (!records.hasMatchingMagic(magic))</span><br><span class="line">    <span class="comment">//不等的话，就进行消息类型的转换和offset值的分配。</span></span><br><span class="line">      convertAndAssignOffsetsNonCompressed(records, topicPartition, offsetCounter, compactedTopic, time, now, timestampType,</span><br><span class="line">        timestampDiffMaxMs, magic, partitionLeaderEpoch, origin, brokerTopicStats)</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">      <span class="comment">// Do in-place validation, offset assignment and maybe set timestamp</span></span><br><span class="line">      <span class="comment">//相等的话，做就地的验证，和offset的分配，然后有可能会添加timstamp字段的值。</span></span><br><span class="line">      assignOffsetsNonCompressed(records, topicPartition, offsetCounter, now, compactedTopic, timestampType, timestampDiffMaxMs,</span><br><span class="line">        partitionLeaderEpoch, origin, magic, brokerTopicStats)</span><br><span class="line">  &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    <span class="comment">//若是两者都有压缩，或者两者任一有压缩时，调用同功能，可处理压缩类型的处理方法。</span></span><br><span class="line">    validateMessagesAndAssignOffsetsCompressed(records, topicPartition, offsetCounter, time, now, sourceCodec, targetCodec, compactedTopic,</span><br><span class="line">      magic, timestampType, timestampDiffMaxMs, partitionLeaderEpoch, origin, interBrokerProtocolVersion, brokerTopicStats)</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>我们看到在这里，它比较了producer设置的压缩类型和broker设置的压缩类型，只要二者中存在一个设置了压缩类型的话，就会调用下面的validateMessagesAndAssignOffsetsCompressed方法，我们跟进方法进行Track 进去：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">   * We cannot do in place assignment in one of the following situations:</span></span><br><span class="line"><span class="comment">   * 1. Source and target compression codec are different</span></span><br><span class="line"><span class="comment">   * 2. When the target magic is not equal to batches' magic, meaning format conversion is needed.</span></span><br><span class="line"><span class="comment">   * 3. When the target magic is equal to V0, meaning absolute offsets need to be re-assigned.</span></span><br><span class="line"><span class="comment">   */</span></span><br><span class="line">  <span class="function">def <span class="title">validateMessagesAndAssignOffsetsCompressed</span><span class="params">(records: MemoryRecords,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 topicPartition: TopicPartition,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 offsetCounter: LongRef,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 time: Time,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 now: Long,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 sourceCodec: CompressionCodec,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 targetCodec: CompressionCodec,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 compactedTopic: Boolean,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 toMagic: Byte,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 timestampType: TimestampType,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 timestampDiffMaxMs: Long,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 partitionLeaderEpoch: Int,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 origin: AppendOrigin,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 interBrokerProtocolVersion: ApiVersion,</span></span></span><br><span class="line"><span class="function"><span class="params">                                                 brokerTopicStats: BrokerTopicStats)</span>: ValidationAndOffsetAssignResult </span>= &#123;</span><br><span class="line">    <span class="comment">//kafka2.1版本以下，不能设置ZSTD压缩方法。</span></span><br><span class="line">    <span class="keyword">if</span> (targetCodec == ZStdCompressionCodec &amp;&amp; interBrokerProtocolVersion &lt; KAFKA_2_1_IV0)</span><br><span class="line">      <span class="keyword">throw</span> <span class="keyword">new</span> UnsupportedCompressionTypeException(<span class="string">"Produce requests to inter.broker.protocol.version &lt; 2.1 broker "</span> +</span><br><span class="line">        <span class="string">"are not allowed to use ZStandard compression"</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment">//当producer和 broker设置压缩类型一致时，可以就地分配</span></span><br><span class="line">    <span class="comment">// No in place assignment situation 1</span></span><br><span class="line">    <span class="keyword">var</span> inPlaceAssignment = sourceCodec == targetCodec</span><br><span class="line">    <span class="comment">//默认最大时间戳为-1</span></span><br><span class="line">    <span class="keyword">var</span> maxTimestamp = RecordBatch.NO_TIMESTAMP</span><br><span class="line">    <span class="comment">//检验内部Offset 是否从0开始一次递增</span></span><br><span class="line">    val expectedInnerOffset = <span class="keyword">new</span> LongRef(<span class="number">0</span>)</span><br><span class="line">    <span class="comment">//存储通过检验当Record</span></span><br><span class="line">    val validatedRecords = <span class="keyword">new</span> mutable.ArrayBuffer[Record]</span><br><span class="line">    <span class="comment">//存储解压后总Record Bytes大小</span></span><br><span class="line">    <span class="keyword">var</span> uncompressedSizeInBytes = <span class="number">0</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// Assume there's only one batch with compressed memory records; otherwise, return InvalidRecordException</span></span><br><span class="line">    <span class="comment">// One exception though is that with format smaller than v2, if sourceCodec is noCompression, then each batch is actually</span></span><br><span class="line">    <span class="comment">// a single record so we'd need to special handle it by creating a single wrapper batch that includes all the records</span></span><br><span class="line">    <span class="comment">//默认一个Request是只能包含一个Batch的，如果包含多个就报InvalidRecordException</span></span><br><span class="line">    <span class="comment">//其中有例外情况就是 message_format version 是小于v2的，在v1/v0版本中，如果producer设置未压缩状态的话，一个Batch是只包含一条Record的，因此</span></span><br><span class="line">    <span class="comment">//我们需要特别处理这种情况，通过创建一个Wrapper Batch 来包含所有的 record</span></span><br><span class="line">    val firstBatch = getFirstBatchAndMaybeValidateNoMoreBatches(records, sourceCodec)</span><br><span class="line"></span><br><span class="line">    <span class="comment">//当producer的magic版本和broker的magic版本是不一样的话，或者是虽然两者的magic版本一样，但是是v0版本的时候</span></span><br><span class="line">    <span class="comment">//也不能就地转换。</span></span><br><span class="line">    <span class="comment">// No in place assignment situation 2 and 3: we only need to check for the first batch because:</span></span><br><span class="line">    <span class="comment">//  1. For most cases (compressed records, v2, for example), there's only one batch anyways.</span></span><br><span class="line">    <span class="comment">//  2. For cases that there may be multiple batches, all batches' magic should be the same.</span></span><br><span class="line">    <span class="keyword">if</span> (firstBatch.magic != toMagic || toMagic == RecordBatch.MAGIC_VALUE_V0)</span><br><span class="line">      inPlaceAssignment = <span class="keyword">false</span></span><br><span class="line">    <span class="comment">//不压缩control records ，除非在batch中写了要进行压缩</span></span><br><span class="line">    <span class="comment">// Do not compress control records unless they are written compressed</span></span><br><span class="line">    <span class="keyword">if</span> (sourceCodec == NoCompressionCodec &amp;&amp; firstBatch.isControlBatch)</span><br><span class="line">      inPlaceAssignment = <span class="keyword">true</span></span><br><span class="line">    <span class="comment">//</span></span><br><span class="line">    val batches = records.batches.asScala</span><br><span class="line">    <span class="keyword">for</span> (batch &lt;- batches) &#123;</span><br><span class="line">      validateBatch(topicPartition, firstBatch, batch, origin, toMagic, brokerTopicStats)</span><br><span class="line">      uncompressedSizeInBytes += AbstractRecords.recordBatchHeaderSizeInBytes(toMagic, batch.compressionType())</span><br><span class="line"></span><br><span class="line">      <span class="comment">// if we are on version 2 and beyond, and we know we are going for in place assignment,</span></span><br><span class="line">      <span class="comment">// then we can optimize the iterator to skip key / value / headers since they would not be used at all</span></span><br><span class="line">      <span class="comment">//如果就Batch中magic的版本是&gt;=2的，并且可以就地转换的话，在进行Record 解析的时候，可以不解析key/value/headers</span></span><br><span class="line">      val recordsIterator = <span class="keyword">if</span> (inPlaceAssignment &amp;&amp; firstBatch.magic &gt;= RecordBatch.MAGIC_VALUE_V2)</span><br><span class="line">        batch.skipKeyValueIterator(BufferSupplier.NO_CACHING)</span><br><span class="line">      <span class="keyword">else</span></span><br><span class="line">        batch.streamingIterator(BufferSupplier.NO_CACHING)</span><br><span class="line"></span><br><span class="line">      <span class="keyword">try</span> &#123;</span><br><span class="line">        <span class="comment">//利用batch中的迭代器解析成record</span></span><br><span class="line">        <span class="keyword">for</span> ((record, batchIndex) &lt;- batch.asScala.view.zipWithIndex) &#123;</span><br><span class="line">          <span class="keyword">if</span> (sourceCodec != NoCompressionCodec &amp;&amp; record.isCompressed)</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> RecordValidationException(</span><br><span class="line">              <span class="keyword">new</span> InvalidRecordException(s<span class="string">"Compressed outer record should not have an inner record with a compression attribute set: $record"</span>),</span><br><span class="line">              List(<span class="keyword">new</span> RecordError(batchIndex)))</span><br><span class="line"></span><br><span class="line">          validateRecord(batch, topicPartition, record, batchIndex, now, timestampType, timestampDiffMaxMs, compactedTopic, brokerTopicStats)</span><br><span class="line">          <span class="comment">//统计未压缩的record尺寸</span></span><br><span class="line">          uncompressedSizeInBytes += record.sizeInBytes()</span><br><span class="line">          <span class="comment">//如果两者的magic 都大于0的话，说明Record内部都是 Offset Deleta ，需要进行验证。</span></span><br><span class="line">          <span class="keyword">if</span> (batch.magic &gt; RecordBatch.MAGIC_VALUE_V0 &amp;&amp; toMagic &gt; RecordBatch.MAGIC_VALUE_V0) &#123;</span><br><span class="line">            <span class="comment">// inner records offset should always be continuous</span></span><br><span class="line">            val expectedOffset = expectedInnerOffset.getAndIncrement()</span><br><span class="line">            <span class="comment">//不相等的报错</span></span><br><span class="line">            <span class="keyword">if</span> (record.offset != expectedOffset) &#123;</span><br><span class="line">              brokerTopicStats.allTopicsStats.invalidOffsetOrSequenceRecordsPerSec.mark()</span><br><span class="line">              <span class="keyword">throw</span> <span class="keyword">new</span> RecordValidationException(</span><br><span class="line">                <span class="keyword">new</span> InvalidRecordException(s<span class="string">"Inner record $record inside the compressed record batch does not have incremental offsets, expected offset is $expectedOffset in topic partition $topicPartition."</span>),</span><br><span class="line">                List(<span class="keyword">new</span> RecordError(batchIndex)))</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="comment">//记录最大TimesTamp</span></span><br><span class="line">            <span class="keyword">if</span> (record.timestamp &gt; maxTimestamp)</span><br><span class="line">              maxTimestamp = record.timestamp</span><br><span class="line">          &#125;</span><br><span class="line"></span><br><span class="line">          validatedRecords += record</span><br><span class="line">        &#125;</span><br><span class="line">      &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">        recordsIterator.close()</span><br><span class="line">      &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">if</span> (!inPlaceAssignment) &#123;</span><br><span class="line">      <span class="comment">//如果不能就地转换的话，需要利用MemoryBuilder进行message_format_version的格式转换，</span></span><br><span class="line">      <span class="comment">//或者压缩类型转换，这里可以发现，不管是格式转换，还是压缩类型转换，耗费的资源是一样的。</span></span><br><span class="line">      <span class="comment">//都需要重新build 目的版本的magic，并且进行重新的压缩。</span></span><br><span class="line">      val (producerId, producerEpoch, sequence, isTransactional) = &#123;</span><br><span class="line">        <span class="comment">// note that we only reassign offsets for requests coming straight from a producer. For records with magic V2,</span></span><br><span class="line">        <span class="comment">// there should be exactly one RecordBatch per request, so the following is all we need to do. For Records</span></span><br><span class="line">        <span class="comment">// with older magic versions, there will never be a producer id, etc.</span></span><br><span class="line">        val first = records.batches.asScala.head</span><br><span class="line">        (first.producerId, first.producerEpoch, first.baseSequence, first.isTransactional)</span><br><span class="line">      &#125;</span><br><span class="line">      buildRecordsAndAssignOffsets(toMagic, offsetCounter, time, timestampType, CompressionType.forId(targetCodec.codec),</span><br><span class="line">        now, validatedRecords, producerId, producerEpoch, sequence, isTransactional, partitionLeaderEpoch,</span><br><span class="line">        uncompressedSizeInBytes)</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">      <span class="comment">//如果可以就地转换的话，只需要在BatchHeader中填充对应的lastOffset 信息，maxTimestamp信息，partitionLeader信息，即可。</span></span><br><span class="line">      <span class="comment">// we can update the batch only and write the compressed payload as is;</span></span><br><span class="line">      <span class="comment">// again we assume only one record batch within the compressed set</span></span><br><span class="line">      val batch = records.batches.iterator.next()</span><br><span class="line">      val lastOffset = offsetCounter.addAndGet(validatedRecords.size) - <span class="number">1</span></span><br><span class="line">      <span class="comment">//lastOffset信息</span></span><br><span class="line">      batch.setLastOffset(lastOffset)</span><br><span class="line">      <span class="comment">//maxTimestamp信息</span></span><br><span class="line">      <span class="keyword">if</span> (timestampType == TimestampType.LOG_APPEND_TIME)</span><br><span class="line">        maxTimestamp = now</span><br><span class="line">      </span><br><span class="line">      <span class="keyword">if</span> (toMagic &gt;= RecordBatch.MAGIC_VALUE_V1)</span><br><span class="line">        batch.setMaxTimestamp(timestampType, maxTimestamp)</span><br><span class="line">      <span class="comment">//partition leader信息</span></span><br><span class="line">      <span class="keyword">if</span> (toMagic &gt;= RecordBatch.MAGIC_VALUE_V2)</span><br><span class="line">        batch.setPartitionLeaderEpoch(partitionLeaderEpoch)</span><br><span class="line">    </span><br><span class="line">      val recordConversionStats = <span class="keyword">new</span> RecordConversionStats(uncompressedSizeInBytes, <span class="number">0</span>, <span class="number">0</span>)</span><br><span class="line">      ValidationAndOffsetAssignResult(validatedRecords = records,</span><br><span class="line">        maxTimestamp = maxTimestamp,</span><br><span class="line">        shallowOffsetOfMaxTimestamp = lastOffset,</span><br><span class="line">        messageSizeMaybeChanged = <span class="keyword">false</span>,</span><br><span class="line">        recordConversionStats = recordConversionStats)</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br></pre></td></tr></table></figure>
+<p>不可以就地分配Offset的情况有以下3种，这3种所耗费的资源是一样的：</p>
+<ol>
+<li>Producer设置的压缩类型和broker设置的压缩类型是不一样的。</li>
+<li>Producer设置的magic版本和broekr设置的magic版本是不一样的。</li>
+<li>以上两个都一样，但是magic 版本为V0的情况下。</li>
+</ol>
+<p>以上3种情况，都需要利用MemoryRecordBuilder 重新构建对应版本的Record信息，并利用broker端的压缩方法，进行消息的重新压缩。</p>
+<p>除了以上3个情况外，也就是当producer和broker设置的 压缩类型一样，并且magic版本一样的情况下且不为0的情况下，是可以就地分配给batch分配LastOffset，maxTimesTamp，partition Leader epoch的，然后同时也不需要对Records 进行重新的压缩和解析。</p>
+<ul>
+<li>当然这里需要注意，不管是不是就地分配，前面对Batch中record的解析和验证，已经统计信息，都是需要的做的。</li>
+</ul>
+<p>到此，我们就可以回答上文提到的问题了：</p>
+<p>Q：当kafka producer 在访问 kafka 服务器的时候，分别在客户端和服务器端使用不同的压缩版本的话，broker会怎么处理呢？</p>
+<p>A：kafka 不管两者压缩类型是否一致，都会对Producer中发送的消息进行解压缩的操作，这样做的目的是，为了对Batch中的Record进行 inner offset的验证，和lastOffset，以及最大时间戳，和对应offset的统计。但是当两者采用的压缩类型不一致时，或者magic 版本不一致时，broker就会对消息进行重新解析和构建，然后利用broker服务器的压缩方式进行重新压缩，如果两者一致的情况下，就会节省了MemoryRecordBuilder 和消息重新压缩的时间和资源。所以综上考虑，还是broker端和producer端设置的压缩类型和magic版本都一致的情况下，broker服务器的性能最好。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/kafka源码/" rel="tag"># kafka源码</a>
+          
+            <a href="/tags/producer/" rel="tag"># producer</a>
+          
+            <a href="/tags/client/" rel="tag"># client</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2021/03/24/kafka2-4-1源码阅读之ProducerAPI/" rel="next" title="kafka2.4.1源码阅读之ProducerAPI">
+                <i class="fa fa-chevron-left"></i> kafka2.4.1源码阅读之ProducerAPI
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+    <div class="comments" id="comments">
+    </div>
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            Table of Contents
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            Overview
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <p class="site-author-name" itemprop="name">fcyang</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">2</span>
+                  <span class="site-state-item-name">posts</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">1</span>
+                  <span class="site-state-item-name">categories</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                
+                  <span class="site-state-item-count">3</span>
+                  <span class="site-state-item-name">tags</span>
+                
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/zhmin" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#kafka2-4-1-源码阅读"><span class="nav-number">1.</span> <span class="nav-text">kafka2.4.1 源码阅读</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#Produce-API-二-不同压缩类型的处理"><span class="nav-number">1.1.</span> <span class="nav-text">Produce API (二) 不同压缩类型的处理</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#源码解析"><span class="nav-number">1.2.</span> <span class="nav-text">源码解析</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fcyang</span>
+
+  
+</div>
+
+
+
+
+
+
+
+
+
+
+
+  <script src="https://unpkg.com/mermaid@8/dist/mermaid.min.js"></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({"startOnload":true,"theme":"forest"});
+    }
+  </script>
+
+
+
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<span id="busuanzi_container_site_pv">
+    访问量<span id="busuanzi_value_site_pv"></span>
+</span>
+<span class="post-meta-divider">|</span>
+<span id="busuanzi_container_site_uv">
+  访客数<span id="busuanzi_value_site_uv"></span>
+</span>
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//unpkg.com/valine/dist/Valine.min.js"></script>
+  
+  <script type="text/javascript">
+    var GUEST = ['nick','mail','link'];
+    var guest = 'nick';
+    guest = guest.split(',').filter(item=>{
+      return GUEST.indexOf(item)>-1;
+    });
+    new Valine({
+        el: '#comments' ,
+        verify: false,
+        notify: false,
+        appId: 'iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz',
+        appKey: 'EW8G4sftwX1pef1zS9EsOeKE',
+        placeholder: 'comment here',
+        avatar:'mm',
+        guest_info:guest,
+        pageSize:'10' || 10,
+    });
+  </script>
+
+
+
+  
+
+
+
+
+
+  
+
+  
+  <script src="https://cdn1.lncld.net/static/js/av-core-mini-0.6.4.js"></script>
+  <script>AV.initialize("iYiPQlDR2X2zg2QIql2UEe2o-gzGzoHsz", "EW8G4sftwX1pef1zS9EsOeKE");</script>
+  <script>
+    function showTime(Counter) {
+      var query = new AV.Query(Counter);
+      var entries = [];
+      var $visitors = $(".leancloud_visitors");
+
+      $visitors.each(function () {
+        entries.push( $(this).attr("id").trim() );
+      });
+
+      query.containedIn('url', entries);
+      query.find()
+        .done(function (results) {
+          var COUNT_CONTAINER_REF = '.leancloud-visitors-count';
+
+          if (results.length === 0) {
+            $visitors.find(COUNT_CONTAINER_REF).text(0);
+            return;
+          }
+
+          for (var i = 0; i < results.length; i++) {
+            var item = results[i];
+            var url = item.get('url');
+            var time = item.get('time');
+            var element = document.getElementById(url);
+
+            $(element).find(COUNT_CONTAINER_REF).text(time);
+          }
+          for(var i = 0; i < entries.length; i++) {
+            var url = entries[i];
+            var element = document.getElementById(url);
+            var countSpan = $(element).find(COUNT_CONTAINER_REF);
+            if( countSpan.text() == '') {
+              countSpan.text(0);
+            }
+          }
+        })
+        .fail(function (object, error) {
+          console.log("Error: " + error.code + " " + error.message);
+        });
+    }
+
+    function addCount(Counter) {
+      var $visitors = $(".leancloud_visitors");
+      var url = $visitors.attr('id').trim();
+      var title = $visitors.attr('data-flag-title').trim();
+      var query = new AV.Query(Counter);
+
+      query.equalTo("url", url);
+      query.find({
+        success: function(results) {
+          if (results.length > 0) {
+            var counter = results[0];
+            counter.fetchWhenSave(true);
+            counter.increment("time");
+            counter.save(null, {
+              success: function(counter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(counter.get('time'));
+              },
+              error: function(counter, error) {
+                console.log('Failed to save Visitor num, with error message: ' + error.message);
+              }
+            });
+          } else {
+            var newcounter = new Counter();
+            /* Set ACL */
+            var acl = new AV.ACL();
+            acl.setPublicReadAccess(true);
+            acl.setPublicWriteAccess(true);
+            newcounter.setACL(acl);
+            /* End Set ACL */
+            newcounter.set("title", title);
+            newcounter.set("url", url);
+            newcounter.set("time", 1);
+            newcounter.save(null, {
+              success: function(newcounter) {
+                var $element = $(document.getElementById(url));
+                $element.find('.leancloud-visitors-count').text(newcounter.get('time'));
+              },
+              error: function(newcounter, error) {
+                console.log('Failed to create');
+              }
+            });
+          }
+        },
+        error: function(error) {
+          console.log('Error:' + error.code + " " + error.message);
+        }
+      });
+    }
+
+    $(function() {
+      var Counter = AV.Object.extend("Counter");
+      if ($('.leancloud_visitors').length == 1) {
+        addCount(Counter);
+      } else if ($('.post-title-link').length > 1) {
+        showTime(Counter);
+      }
+    });
+  </script>
+
+
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>
